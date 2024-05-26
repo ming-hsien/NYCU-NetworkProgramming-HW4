@@ -48,3 +48,6 @@ Thumbs.db
 *.mov
 *.wmv
 
+test.cpp
+test.o
+test
