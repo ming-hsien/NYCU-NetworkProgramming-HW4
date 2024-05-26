@@ -149,8 +149,154 @@ class client : public std::enable_shared_from_this<client> {
         ifstream infile;
 };
 
-class socksclient : public std::enable_shared_from_this<socksclient> {
+class socksClient : public std::enable_shared_from_this<socksClient> {
+    public : 
+        socksClient(boost::asio::io_context& io_context, int i) : resolver(io_context), socket_(io_context), id(i){}
+
+        void start() {
+            memset(data_, '\0', max_length);
+            infile.open("./test_case/" + QUERYINFO[id].filename);
+            if (infile.is_open()) {
+                do_resolve();
+            }
+            else {
+                cerr << "file open error" << endl;
+                socket_.close();
+            }
+        }
     
+    private :
+        void do_resolve() {
+            tcp::resolver::query resolve_query(QUERYINFO[id].host, QUERYINFO[id].port);
+            auto self(shared_from_this());
+            resolver.async_resolve(resolve_query,
+                [this, self](boost::system::error_code ec, tcp::resolver::results_type resolve_ip) {
+                    if (!ec) {
+                        do_connect(resolve_ip);
+                    }
+                    else {
+                        cerr << "resolve error" << endl;
+                        socket_.close();
+                    }
+                }
+            );
+        }
+
+        void do_connect(tcp::resolver::results_type resolve_ip) {
+            auto self(shared_from_this());
+            boost::asio::async_connect(socket_, resolve_ip,
+                [this, self](boost::system::error_code ec, const tcp::endpoint& endpoint) {
+                    if (!ec) {
+                        do_buildSOCKS4();
+                        do_read();
+                    }
+                    else {
+                        cerr << "connect error" << endl;
+                        socket_.close();
+                    }
+                }
+            );
+        }
+
+        // 透過SOCKS Server建立與Np golden的連線
+        void do_buildSOCKS4() {
+            string SOCKS4Req = "";
+            SOCKS4Req.push_back(4);
+            SOCKS4Req.push_back(1);
+            int port = QUERYINFO[id].port;
+            SOCKS4Req.push_back(int(port / 256));
+            SOCKS4Req.push_back(int(port % 256));
+            SOCKS4Req.push_back(0);
+            SOCKS4Req.push_back(0);
+            SOCKS4Req.push_back(0);
+            SOCKS4Req.push_back(1);
+            SOCKS4Req.push_back(0);
+            SOCKS4Req += QUERYINFO[id].host;
+            SOCKS4Req.push_back(0);
+
+            boost::system::error_code ec;
+            boost::asio::write(socket_, boost::asio::buffer(SOCKS4Req), boost::asio::transfer_all(), ec);
+            if (ec) {
+                cerr << "SEND SOCKS4 REQUEST ERROR !" << "\n" << flush;
+                socket_.close();
+            }
+            else {
+                unsigned char reply[8];
+                boost::asio::read(socket_, boost::asio::buffer(reply), boost::asio::transfer_all(), ec);
+                if (ec || reply[1] != 90) {
+                    cerr << "BUILD SOCKS ERROR\n" << flush;
+                    socket_.close();
+                }
+            }
+        }
+
+        void do_read() {
+            auto self(shared_from_this());
+            socket_.async_read_some(boost::asio::buffer(data_, max_length),
+                [this, self](boost::system::error_code ec, size_t length) {
+                    if (!ec) {
+                        data_[length] = '\0';
+                        string input = replace_escape(string(data_));
+                        output_shell(input);
+                        memset(data_, '\0', max_length);
+                        if (input.find("%") != string::npos) {
+                            do_writeCmd();
+                        }
+                        else {
+                            do_read();
+                        }
+                    }
+                    else {
+                        cerr << "read error" << endl;
+                        socket_.close();
+                    }
+                }
+            );
+        }
+
+        void do_writeCmd() {
+            auto self(shared_from_this());
+            string Cmd = "";
+            getline(infile, Cmd);
+            Cmd += '\n';
+            output_command(replace_escape(Cmd));
+            boost::asio::async_write(socket_, boost::asio::buffer(Cmd, Cmd.size()),
+                [this, self](boost::system::error_code ec, unsigned long int length) {
+                    if (!ec) {
+                        do_read();
+                    }
+                    else {
+                        cerr << "write error" << endl;
+                    }
+                }
+            );
+        }
+
+        void output_shell(string str) {
+            cout << "<script>document.getElementById('s" << id << "').innerHTML += '" << str << "';</script>\n" << flush;
+        }
+
+        void output_command(string str) {
+            cout << "<script>document.getElementById('s" << id << "').innerHTML += '<b>" << str << "</b>';</script>\n" << flush;
+        }
+
+        string replace_escape(string str){
+            boost::algorithm::replace_all(str, "&", "&amp;");
+            boost::algorithm::replace_all(str, "\r", "");
+            boost::algorithm::replace_all(str, "\n", "&NewLine;");
+            boost::algorithm::replace_all(str, "\'", "&apos;");
+            boost::algorithm::replace_all(str, "\"", "&quot;");
+            boost::algorithm::replace_all(str, "<", "&lt;");
+            boost::algorithm::replace_all(str, ">", "&gt;");
+            return str;
+        }
+
+        boost::asio::ip::tcp::resolver resolver;
+        boost::asio::ip::tcp::socket socket_;
+        enum { max_length = 4096 };
+        char data_[max_length];
+        int id;
+        ifstream infile;
 };
 
 
@@ -284,7 +430,7 @@ int main(int argc, char* argv[]) {
 
         if (socksServer.host != "") {
             for (long unsigned int i = 0; i < QUERYINFO.size(); i++) {
-                std::make_shared<socksclient>(io_context, i)->start();
+                std::make_shared<socksClient>(io_context, i)->start();
             }
         }
         else {
