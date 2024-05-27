@@ -155,7 +155,7 @@ class socksClient : public std::enable_shared_from_this<socksClient> {
 
         void start() {
             memset(data_, '\0', max_length);
-            infile.open("./test_case/" + QUERYINFO[id].filename);
+            infile.open("test_case/" + QUERYINFO[id].filename);
             if (infile.is_open()) {
                 do_resolve();
             }
@@ -167,7 +167,7 @@ class socksClient : public std::enable_shared_from_this<socksClient> {
     
     private :
         void do_resolve() {
-            tcp::resolver::query resolve_query(QUERYINFO[id].host, QUERYINFO[id].port);
+            tcp::resolver::query resolve_query(socksServer.host, socksServer.port);
             auto self(shared_from_this());
             resolver.async_resolve(resolve_query,
                 [this, self](boost::system::error_code ec, tcp::resolver::results_type resolve_ip) {
@@ -213,18 +213,19 @@ class socksClient : public std::enable_shared_from_this<socksClient> {
             SOCKS4Req.push_back(0);
             SOCKS4Req += QUERYINFO[id].host;
             SOCKS4Req.push_back(0);
-
+            
             boost::system::error_code ec;
             boost::asio::write(socket_, boost::asio::buffer(SOCKS4Req), boost::asio::transfer_all(), ec);
             if (ec) {
-                cerr << "SEND SOCKS4 REQUEST ERROR !" << "\n" << flush;
+                cerr << "console : SEND SOCKS4 REQUEST ERROR !" << "\n" << flush;
                 socket_.close();
             }
             else {
                 unsigned char reply[8];
                 boost::asio::read(socket_, boost::asio::buffer(reply), boost::asio::transfer_all(), ec);
+                cerr << "reply[1] = " << int(reply[1]) << "\n" << flush;
                 if (ec || reply[1] != 90) {
-                    cerr << "BUILD SOCKS ERROR\n" << flush;
+                    cerr << "console : BUILD SOCKS ERROR\n" << flush;
                     socket_.close();
                 }
             }
@@ -247,7 +248,6 @@ class socksClient : public std::enable_shared_from_this<socksClient> {
                         }
                     }
                     else {
-                        cerr << "read error" << endl;
                         socket_.close();
                     }
                 }
@@ -427,7 +427,6 @@ int main(int argc, char* argv[]) {
         do_parseQueryString();
         printHttpConsole();
         boost::asio::io_context io_context;
-
         if (socksServer.host != "") {
             for (long unsigned int i = 0; i < QUERYINFO.size(); i++) {
                 std::make_shared<socksClient>(io_context, i)->start();

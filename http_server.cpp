@@ -42,6 +42,7 @@ class session : public enable_shared_from_this<session> {
                             char **argv = stoc(REQ["QUERY_PATH"]);
                             int e = execv(REQ["QUERY_PATH"].c_str(), argv);
                             if(e == -1){
+                                cerr << "http_server : execv error" << "\n";
                                 exit(1);
                             }
                             exit(0);

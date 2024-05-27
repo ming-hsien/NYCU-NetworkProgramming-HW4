@@ -43,7 +43,7 @@ class session : public enable_shared_from_this<session> {
                     if (!ec) {
                         initReply();
                         do_parseSocks4Req(length);
-                        firewall();
+                        // firewall();
                         cout << "<S_IP>: " << socksMsg.srcIP << "\n" << flush;
                         cout << "<S_PORT>: " << socksMsg.srcPort << "\n" << flush;
                         cout << "<D_IP>: " << socksMsg.dstIP << "\n" << flush;
@@ -64,6 +64,9 @@ class session : public enable_shared_from_this<session> {
                             // exit(0);
                         }
                     }
+                    else {
+                        cout << "socks_server : session read_some error" << "\n" << flush;
+                    }
                 }
             );
         }
@@ -74,9 +77,9 @@ class session : public enable_shared_from_this<session> {
             }
         }
 
-        void firewall() {
+        // void firewall() {
 
-        }
+        // }
 
         void do_connectServer() {
             auto self(shared_from_this());
@@ -90,6 +93,7 @@ class session : public enable_shared_from_this<session> {
                         do_readFromServer();
                     }
                     else {
+                        cerr << "connect server error" << "\n" << flush;
                         socks4reply[1] = 91;
                         do_writeReply();
                         socket_Client.close();
@@ -178,7 +182,7 @@ class session : public enable_shared_from_this<session> {
             auto self(shared_from_this());
             boost::asio::async_write(socket_Client, boost::asio::buffer(socks4reply, 8),
                 [this, self](boost::system::error_code ec, size_t length){
-                    if(!ec){
+                    if(ec){
                         cerr << "write reply error ! (socks Reject or Failed)" << endl;
                     }
                 }
@@ -186,6 +190,7 @@ class session : public enable_shared_from_this<session> {
         }
 
         void do_parseSocks4Req(size_t length) {
+            socksMsg.reply = "Accept";
             socksMsg.vn = data_[0];
             socksMsg.cd = data_[1];
             socksMsg.ConnectOrBind = (socksMsg.cd == 1) ? "CONNECT" : "BIND";
@@ -235,22 +240,20 @@ class server {
         
     private:
         void asyncWait() {
-            signal_set.async_wait(
-                [this](boost::system::error_code ec, int signo) {
-					if(acceptor_.is_open()){
-						while(waitpid(-1, &state, WNOHANG) > 0);
-						asyncWait();
-					}
-				});
+            signal_set.async_wait([this](boost::system::error_code ec, int signo) {
+                if(acceptor_.is_open()){
+                    while(waitpid(-1, &state, WNOHANG) > 0);
+                    asyncWait();
+                }
+            });
         }
-        
+
         void do_accept() {
             acceptor_.async_accept(
                 [this](boost::system::error_code ec, tcp::socket socket) {
                     if (!ec) {
                         iocontext.notify_fork(boost::asio::io_context::fork_prepare);
                         pid_t pid;
-
                         while ((pid = fork()) < 0) {
                             usleep(1000);
                         }
@@ -265,6 +268,9 @@ class server {
                             socket.close();
                             do_accept();
                         }
+                    }
+                    else {
+                        cerr << "socks_server : server accept error" << endl;
                     }
                 }
             );
