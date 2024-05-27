@@ -223,7 +223,6 @@ class socksClient : public std::enable_shared_from_this<socksClient> {
             else {
                 unsigned char reply[8];
                 boost::asio::read(socket_, boost::asio::buffer(reply), boost::asio::transfer_all(), ec);
-                cerr << "reply[1] = " << int(reply[1]) << "\n" << flush;
                 if (ec || reply[1] != 90) {
                     cerr << "console : BUILD SOCKS ERROR\n" << flush;
                     socket_.close();

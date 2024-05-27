@@ -4,7 +4,7 @@
 #include <utility>
 #include <string>
 #include <sstream>
-// #include <math.h>
+#include <fstream>
 #include <sys/wait.h>
 #include <boost/asio.hpp>
 #include <map>
@@ -43,12 +43,13 @@ class session : public enable_shared_from_this<session> {
                     if (!ec) {
                         initReply();
                         do_parseSocks4Req(length);
-                        // firewall();
+                        firewall();
                         cout << "<S_IP>: " << socksMsg.srcIP << "\n" << flush;
                         cout << "<S_PORT>: " << socksMsg.srcPort << "\n" << flush;
                         cout << "<D_IP>: " << socksMsg.dstIP << "\n" << flush;
                         cout << "<D_PORT>: " << socksMsg.dstPort << "\n" << flush;
                         cout << "<Command>: " << socksMsg.ConnectOrBind << "\n" << flush;
+                        cout << "<Reply>: " << socksMsg.reply << "\n" << flush;
                         if (socksMsg.reply == "Accept") {
                             socks4reply[1] = 90;
                             if (socksMsg.cd == 1) {
@@ -77,9 +78,37 @@ class session : public enable_shared_from_this<session> {
             }
         }
 
-        // void firewall() {
-
-        // }
+        void firewall() {
+            ifstream fin("./socks.conf");
+            string applicantIP = socksMsg.dstIP;
+            bool pass = false;
+            string bufstr;
+            while(getline(fin, bufstr) && !pass) {
+                char *buf = new char[bufstr.size() + 1];
+                strcpy(buf, bufstr.c_str());
+                vector<string> v;
+                char *p;
+                p = strtok(buf, " ");
+                while (p != NULL) {
+                    v.push_back(p);
+                    p = strtok(NULL, " ");		   
+                }
+                if (v.size() != 3) continue;
+                if (v[0] != "permit" || (v[1] == "c" && socksMsg.ConnectOrBind == "BIND") || (v[1] == "b" && socksMsg.ConnectOrBind == "CONNECT")) continue;
+                int k = 0;
+                while(k < v[2].length() && k < applicantIP.length()) {
+                    if (v[2][k] == '*' || (v[2][k] == applicantIP[k] && k == v[2].length() - 1 && k == applicantIP.length() - 1)) {
+                        pass = true;
+                        break;
+                    }
+                    if (v[2][k] != applicantIP[k]) break;
+                    k++;
+                }
+            }
+            if (pass) {
+                socksMsg.reply = "Accept";
+            }
+        }
 
         void do_connectServer() {
             auto self(shared_from_this());
@@ -190,7 +219,7 @@ class session : public enable_shared_from_this<session> {
         }
 
         void do_parseSocks4Req(size_t length) {
-            socksMsg.reply = "Accept";
+            socksMsg.reply = "Reject";
             socksMsg.vn = data_[0];
             socksMsg.cd = data_[1];
             socksMsg.ConnectOrBind = (socksMsg.cd == 1) ? "CONNECT" : "BIND";

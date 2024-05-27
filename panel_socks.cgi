@@ -4,7 +4,7 @@ import os
 N_SERVERS = 5
 
 FORM_METHOD = 'GET'
-FORM_ACTION = 'console.cgi'
+FORM_ACTION = 'hw4.cgi'
 
 TEST_CASE_DIR = './test_case'
 try:
