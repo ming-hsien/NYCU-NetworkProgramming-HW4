@@ -23,7 +23,7 @@ struct SOCKS_ {
     string dstPort;
     string ConnectOrBind;
     string reply;
-} SOCKS4;
+};
 
 class session : public enable_shared_from_this<session> {
     public : 
@@ -41,8 +41,9 @@ class session : public enable_shared_from_this<session> {
             socket_Client.async_read_some(boost::asio::buffer(data_, max_length),
                 [this, self](boost::system::error_code ec, size_t length) {
                     if (!ec) {
-                        socks4reply = {0, 0, 0, 0, 0, 0, 0, 0};
+                        initReply();
                         do_parseSocks4Req(length);
+                        firewall();
                         cout << "<S_IP>: " << socksMsg.srcIP << "\n" << flush;
                         cout << "<S_PORT>: " << socksMsg.srcPort << "\n" << flush;
                         cout << "<D_IP>: " << socksMsg.dstIP << "\n" << flush;
@@ -67,12 +68,22 @@ class session : public enable_shared_from_this<session> {
             );
         }
 
+        void initReply() {
+            for (int k = 0; k < 8; k++) {
+                socks4reply[k] = 0;
+            }
+        }
+
+        void firewall() {
+
+        }
+
         void do_connectServer() {
             auto self(shared_from_this());
-            resolver_(iocontext);
-			tcp::resolver::results_type ep = resolver_.resolve(socksMsg.dstIP, socksMsg.dstPort);
+            tcp::resolver resolv(iocontext);
+			tcp::resolver::results_type ep = resolv.resolve(socksMsg.dstIP, socksMsg.dstPort);
             boost::asio::async_connect(socket_Server, ep,
-                [this, self](boost::system:error_code ec, tcp::endpoint ed) {
+                [this, self](boost::system::error_code ec, tcp::endpoint ed) {
                     if (!ec) {
                         do_writeReply();
                         do_readFromClient();
@@ -94,7 +105,12 @@ class session : public enable_shared_from_this<session> {
             acceptor_.listen();
             // 取的被自動分配的port number
             unsigned int port = acceptor_.local_endpoint().port();
-            socks4reply = {0, 90, unsigned int(port / 256), unsigned int(port % 256), 0, 0, 0, 0};
+            socks4reply[2] = (unsigned int)(port / 256);
+            socks4reply[3] = (unsigned int)(port % 256);
+            socks4reply[4] = 0;
+            socks4reply[5] = 0;
+            socks4reply[6] = 0;
+            socks4reply[7] = 0;
             do_writeReply();
             acceptor_.accept(socket_Server);
             do_writeReply();
@@ -172,7 +188,7 @@ class session : public enable_shared_from_this<session> {
         void do_parseSocks4Req(size_t length) {
             socksMsg.vn = data_[0];
             socksMsg.cd = data_[1];
-            socksMsg.cmd = (socksMsg.cd == 1) ? "CONNECT" : "BIND";
+            socksMsg.ConnectOrBind = (socksMsg.cd == 1) ? "CONNECT" : "BIND";
             socksMsg.dstPort = to_string((unsigned int) (data_[2] << 8) | (data_[3]));
             if (data_[4] == 0 && data_[5] == 0 && data_[6] == 0 && data_[7] != 0) {
                 bool domainNameHead = false;
@@ -206,7 +222,7 @@ class session : public enable_shared_from_this<session> {
         unsigned char data_[max_length];
         unsigned char data_Server[max_length];
         unsigned char data_Client[max_length];
-        SOCKS4 socksMsg;
+        SOCKS_ socksMsg;
         unsigned char socks4reply[8];
 };
 
@@ -219,16 +235,15 @@ class server {
         
     private:
         void asyncWait() {
-            signal_set.async_wait(handler);
+            signal_set.async_wait(
+                [this](boost::system::error_code ec, int signo) {
+					if(acceptor_.is_open()){
+						while(waitpid(-1, &state, WNOHANG) > 0);
+						asyncWait();
+					}
+				});
         }
-        void handler(const boost::system::error_code& error, int signal_number) {
-            if (!error) {
-                if(acceptor_.is_open()){
-                    while(waitpid(-1, &state, WNOHANG) > 0);
-                    asyncWait();
-                }
-            }
-        }
+        
         void do_accept() {
             acceptor_.async_accept(
                 [this](boost::system::error_code ec, tcp::socket socket) {
@@ -257,7 +272,7 @@ class server {
 
         tcp::acceptor acceptor_;
         boost::asio::signal_set signal_set;
-        boost::asio::io_context& iocontext
+        boost::asio::io_context& iocontext;
 };
 
 int main(int argc, char* argv[]) {

@@ -203,7 +203,7 @@ class socksClient : public std::enable_shared_from_this<socksClient> {
             string SOCKS4Req = "";
             SOCKS4Req.push_back(4);
             SOCKS4Req.push_back(1);
-            int port = QUERYINFO[id].port;
+            int port = stoi(QUERYINFO[id].port);
             SOCKS4Req.push_back(int(port / 256));
             SOCKS4Req.push_back(int(port % 256));
             SOCKS4Req.push_back(0);
